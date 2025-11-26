@@ -299,8 +299,12 @@ class ConfigManager:
                 config[param] = self.global_params[param]
         
         # Step 3: Apply module-specific overrides
-        module_config = self.module_configs.get(module_name, {})
-        config.update(module_config)
+        # Step 3: Apply module-specific overrides
+            module_config = self.module_configs.get(module_name)
+            if module_config is None:
+                module_config = {}          # treat empty YAML sections as empty dict
+        
+            config.update(module_config)
         
         # Step 4: Validate required parameters
         missing = [p for p in schema["required"] if p not in config]
