@@ -41,9 +41,9 @@ global:
 # ============================================================================
 data:
   # Dataset paths
-  train_data_path: "./data/lungs_train.h5ad"
-  val_data_path: "./data/lungs_val.h5ad"
-  test_data_path: "./data/lungs_test.h5ad"
+  train_data_path: "./data/lungs_train_clean.h5ad"
+  val_data_path: "./data/lungs_val_clean.h5ad"
+  test_data_path: "./data/lungs_test_clean.h5ad"
   
   # Data preprocessing
   log_transform: true              # Apply log1p transformation

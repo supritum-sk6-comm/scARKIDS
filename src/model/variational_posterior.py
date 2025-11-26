@@ -249,7 +249,8 @@ class VariationalPosteriorModule(nn.Module):
             )
         
         # Get cell type probabilities from classifier
-        celltype_probs = self.classifier(x, batch_onehot)
+        batch_indices = batch_onehot.argmax(dim=1)
+        celltype_probs = self.classifier(x, batch_indices)
         
         # Sample cell type from categorical distribution
         # c ~ Categorical(π_ω(x, b))

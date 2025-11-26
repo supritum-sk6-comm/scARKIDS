@@ -467,7 +467,7 @@ class ELBOModule(nn.Module):
         reverse_mean = self.ddpm_backward.compute_mean(
             z_t=z_t,
             t=t,
-            celltype=celltype_indices
+            cell_type=celltype_indices
         )  # (batch_size, latent_dim)
 
         # ===================================================================
@@ -505,7 +505,7 @@ class ELBOModule(nn.Module):
         reverse_variance = self.ddpm_backward.compute_variance(
             z_t=z_t,
             t=t,
-            celltype=celltype_indices
+            cell_type=celltype_indices
         )  # (batch_size, latent_dim) or (batch_size, 1)
         reverse_logvar = torch.log(reverse_variance.clamp(min=1e-20))
         if reverse_logvar.shape[-1] == 1:

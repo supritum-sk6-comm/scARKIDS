@@ -619,7 +619,7 @@ def run_inference(
         np.save(predictions_path, all_results['cell_type_predictions'])
         logger.info(f"✓ Saved cell type predictions to {predictions_path}")
         
-        if all_results['cell_type_probs']:
+        if all_results['cell_type_probs'].size > 0:
             probs_path = Path(output_dir) / 'cell_type_probabilities.npy'
             np.save(probs_path, all_results['cell_type_probs'])
             logger.info(f"✓ Saved cell type probabilities to {probs_path}")
