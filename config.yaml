@@ -18,13 +18,13 @@
 # ============================================================================
 global:
   # Core dimensions
-  latent_dim: 10                    # Dimension of latent space z^(0)
-  n_diffusion_steps: 1000          # Number of diffusion timesteps T
+  latent_dim: 20                    # Dimension of latent space z^(0)
+  n_diffusion_steps: 400          # Number of diffusion timesteps T
   
   # Data dimensions (inferred from dataset or specified)
   n_genes: 2000                    # Number of genes (same across all batches - anchor genes)
-  n_batches: 3                     # Number of batches B
-  n_cell_types: 8                  # Number of cell types C
+  n_batches: 4                     # Number of batches B
+  n_cell_types: 13                  # Number of cell types C
   
   # Model mode
   supervised: false                # true: c* known, false: c inferred
@@ -41,17 +41,17 @@ global:
 # ============================================================================
 data:
   # Dataset paths
-  train_data_path: "data/train.h5ad"
-  val_data_path: "data/val.h5ad"
-  test_data_path: "data/test.h5ad"
+  train_data_path: "./data/lungs_train.h5ad"
+  val_data_path: "./data/lungs_val.h5ad"
+  test_data_path: "./data/lungs_test.h5ad"
   
   # Data preprocessing
   log_transform: true              # Apply log1p transformation
   normalize: true                  # Normalize by library size
   
   # Cell type and batch information
-  cell_type_key: "cell_type"       # Key in adata.obs for cell type labels
-  batch_key: "batch"               # Key in adata.obs for batch labels
+  cell_type_key: "none"       # Key in adata.obs for cell type labels
+  batch_key: "orig.ident"               # Key in adata.obs for batch labels
   
   # Optional: Empirical priors (computed from data if not specified)
   # cell_type_prior_probs: [0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]  # Uniform
@@ -102,7 +102,7 @@ likelihood:
   
   # Decoder architecture
   hidden_dim: 128                  # Hidden layer dimension for decoders
-  n_layers: 2                      # Number of hidden layers
+  n_layers: 3                      # Number of hidden layers
   
   # ZINB parameters
   dispersion_mode: "gene"          # Options: 'gene' (gene-specific θ_g)
@@ -118,10 +118,10 @@ prior:
   # Inherits: latent_dim, n_cell_types, n_batches, supervised from global
   
   # Cell type prior probabilities (if not specified, uses uniform)
-  # cell_type_prior_probs: null    # null for uniform, or list of probabilities
+  cell_type_prior_probs: null    # null for uniform, or list of probabilities
   
   # Batch prior probabilities (if not specified, uses uniform)
-  # batch_prior_probs: null        # null for uniform, or list of probabilities
+  batch_prior_probs: null        # null for uniform, or list of probabilities
 
 # ----------------------------------------------------------------------------
 # DDPM Forward Process Module (q(z^(t)|z^(t-1)))
@@ -141,7 +141,7 @@ ddpm_backward:
   # Inherits: latent_dim, n_diffusion_steps, n_cell_types, dropout from global
   
   # Reverse process variance
-  variance_type: "fixed"           # Options: 'fixed', 'learned'
+  variance_type: "learned"           # Options: 'fixed', 'learned'
   
   # Noise prediction network architecture
   noise_hidden_dim: 128            # Hidden dimension for ε_ψ network
@@ -190,8 +190,8 @@ training:
   lr_warmup_epochs: 5              # Number of warmup epochs
   
   # Logging and checkpointing
-  log_interval: 100                # Log metrics every N batches
-  checkpoint_interval: 1           # Save checkpoint every N epochs
+  log_interval: 10                # Log metrics every N batches
+  checkpoint_interval: 10           # Save checkpoint every N epochs
   checkpoint_dir: "./checkpoints"  # Directory to save checkpoints
   
   # Hardware
@@ -206,8 +206,8 @@ training:
 # ============================================================================
 inference:
   # DDPM refinement (optional)
-  use_ddpm_refinement: false       # Whether to apply DDPM refinement
-  n_refinement_steps: null         # Number of steps (null uses n_diffusion_steps)
+  use_ddpm_refinement: true       # Whether to apply DDPM refinement
+  n_refinement_steps: 100         # Number of steps (null uses n_diffusion_steps)
   
   # Batch correction
   default_target_batch: 0          # Default target batch for correction
