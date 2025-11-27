@@ -739,6 +739,259 @@ def run_inference(
     logger.info("Inference completed successfully")
     logger.info("=" * 80)
 
+def run_sequential_training(
+    config_manager: ConfigManager,
+    managers: Dict,
+    data_loaders: Dict
+):
+    """
+    Execute sequential multi-dataset training with checkpoint management.
+    
+    Two-step approach:
+    1. INITIALIZATION: Load config, initialize all models (fresh params)
+    2. SEQUENTIAL TRAINING: For each session:
+       - Load data
+       - For i=1: Use initialized model
+       - For i>1: Load best model from session i-1
+       - Train
+       - Save best model and metrics
+    
+    Each session has its own:
+    - Log file: scARKIDS/logs/session_name_training.log
+    - Metrics: scARKIDS/logs/session_name_metrics.json
+    - Summary: scARKIDS/logs/session_name_summary.json
+    
+    Args:
+        config_manager: Configuration manager instance
+        managers: Dictionary of initialized managers
+        data_loaders: Dictionary of data loaders (will be recreated per session)
+    """
+    
+    logger.info("=" * 80)
+    logger.info("SEQUENTIAL MULTI-DATASET TRAINING MODE (INITIALIZED ONCE)")
+    logger.info("=" * 80)
+    
+    # ========================================================================
+    # STEP 1: INITIALIZATION (Do this once before any training)
+    # ========================================================================
+    
+    logger.info("\n" + "=" * 80)
+    logger.info("STEP 1: INITIALIZATION (Fresh Model Parameters)")
+    logger.info("=" * 80)
+    
+    logger.info("Model components initialized with fresh parameters")
+    logger.info("Ready for sequential training across all sessions\n")
+    
+    # Get training sessions from config
+    sessions = config_manager.get_training_sessions()
+    
+    if sessions is None:
+        # Fallback to single training run (backward compatibility)
+        logger.info("No sessions config found. Running single training session.")
+        run_training(config_manager, managers, data_loaders)
+        return
+    
+    num_sessions = len(sessions)
+    logger.info(f"Will execute {num_sessions} training sessions sequentially\n")
+    
+    # ========================================================================
+    # STEP 2: SEQUENTIAL TRAINING (One session at a time)
+    # ========================================================================
+    
+    for session_idx, session in enumerate(sessions, 1):
+        logger.info("=" * 80)
+        logger.info(f"SESSION {session_idx}/{num_sessions}: {session['name']}")
+        logger.info("=" * 80)
+        
+        session_name = session['name']
+        data_path = session['data_path']
+        supervised = session['supervised']
+        n_epochs = session['n_epochs']
+        resume_from = session.get('resume_from', None)
+        output_checkpoint = session['output_checkpoint']
+        
+        # ====================================================================
+        # Step 2.1: Configure Session-Specific Logging
+        # ====================================================================
+        
+        logger.info(f"\n[STEP 1/5] Configuring logging for session {session_idx}")
+        
+        # Configure file logging for this session (one log file per session)
+        log_file = Logger.configure_file_logging(
+            session_name=session_name,
+            log_dir="scARKIDS/logs"
+        )
+        logger.info(f"Session logs: {log_file}")
+        
+        # Store session name in config for JSON export
+        training_manager = managers['training']
+        training_manager.session_name = session_name
+        
+        # ====================================================================
+        # Step 2.2: Load Training Data for This Session
+        # ====================================================================
+        
+        logger.info(f"\n[STEP 2/5] Loading training data for session {session_idx}")
+        logger.info(f"Data path: {data_path}")
+        
+        # Validate data exists
+        if not os.path.exists(data_path):
+            logger.error(f"✗ Data not found: {data_path}")
+            raise FileNotFoundError(f"Training data not found: {data_path}")
+        
+        # Update config data path
+        data_config = config_manager.get_data_config()
+        data_config['train_data_path'] = data_path
+        
+        # Create fresh data loaders for this session
+        training_config = config_manager.get_config('training')
+        batch_size = training_config['batch_size']
+        
+        try:
+            session_data_loaders = create_data_loaders(
+                config_manager=config_manager,
+                batch_size=batch_size,
+                num_workers=4
+            )
+        except Exception as e:
+            logger.error(f"✗ Failed to create data loaders: {e}")
+            raise
+        
+        train_loader = session_data_loaders.get('train')
+        if train_loader is None:
+            raise ValueError(
+                f"No training data loaded for session {session_idx} "
+                f"(data_path: {data_path})"
+            )
+        val_loader = session_data_loaders.get('val', None)
+        if val_loader is None:
+            logger.warning(f"No validation data loaded for session {session_idx}")
+            logger.warning(f"Validation metrics will not be computed")
+        
+        n_train = len(train_loader.dataset)
+        logger.info(f"✓ Loaded {n_train} training samples")
+        
+        # ====================================================================
+        # Step 2.3: Handle Model Initialization or Checkpoint Loading
+        # ====================================================================
+        
+        logger.info(f"\n[STEP 3/5] Preparing model for session {session_idx}")
+        
+        if session_idx == 1:
+            # Session 1: Use initialized model (fresh params from STEP 1)
+            logger.info(f"Using initialized model (fresh parameters)")
+        else:
+            # Sessions 2-4: Load best model from previous session
+            if resume_from is not None and os.path.exists(resume_from):
+                logger.info(f"Loading best model from Session {session_idx - 1}")
+                logger.info(f"Checkpoint: {resume_from}")
+                try:
+                    training_manager.load_model(resume_from)
+                    logger.info(f"✓ Model loaded successfully (warm-start)")
+                except Exception as e:
+                    logger.error(f"✗ Failed to load checkpoint: {e}")
+                    raise
+            else:
+                if resume_from is not None:
+                    logger.warning(f"Checkpoint not found: {resume_from}")
+                    logger.warning(f"Initializing fresh model")
+                else:
+                    logger.warning(f"No resume_from specified, using fresh initialization")
+        
+        # ====================================================================
+        # Step 2.4: Update Training Configuration for This Session
+        # ====================================================================
+        
+        logger.info(f"\n[STEP 4/5] Configuring training for session {session_idx}")
+        
+        # Update global supervised mode
+        config_manager.global_params['supervised'] = supervised
+        
+        # Update number of epochs
+        training_config['n_epochs'] = n_epochs
+        
+        # Ensure output directory exists
+        output_dir = os.path.dirname(output_checkpoint)
+        if output_dir:
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
+        logger.info(f"Session Configuration:")
+        logger.info(f"  Name: {session_name}")
+        logger.info(f"  Mode: {'Supervised' if supervised else 'Unsupervised'}")
+        logger.info(f"  Epochs: {n_epochs}")
+        logger.info(f"  Batch size: {batch_size}")
+        logger.info(f"  Train samples: {n_train}")
+        logger.info(f"  Output checkpoint: {output_checkpoint}")
+        
+        # ====================================================================
+        # Step 2.5: Train for This Session
+        # ====================================================================
+        
+        logger.info(f"\n[STEP 5/5] Training on {session_name}")
+        logger.info("-" * 80)
+        
+        try:
+            # Reset best loss tracker for this session
+            training_manager.training_core.best_loss = float('inf')
+            
+            # Train on this session's data
+            training_manager.train(
+                train_loader=train_loader,
+                val_loader=val_loader
+            )
+            
+            logger.info("-" * 80)
+            logger.info(f"✓ Training completed successfully for session {session_idx}")
+            
+        except KeyboardInterrupt:
+            logger.info("⚠ Training interrupted by user")
+            raise
+        except Exception as e:
+            logger.error(f"✗ Training failed for session {session_idx}: {e}")
+            raise
+        
+        # ====================================================================
+        # Step 2.6: Save Best Model and Metrics
+        # ====================================================================
+        
+        logger.info(f"\nSaving best model and metrics")
+        
+        try:
+            training_manager.save_model(output_checkpoint)
+            logger.info(f"✓ Best model saved to: {output_checkpoint}")
+        except Exception as e:
+            logger.error(f"✗ Failed to save checkpoint: {e}")
+            raise
+        
+        # Log session summary
+        best_loss = training_manager.training_core.best_loss
+        logger.info(f"\nSession {session_idx} Summary:")
+        logger.info(f"  Name: {session_name}")
+        logger.info(f"  Best loss: {best_loss:.6f}")
+        logger.info(f"  Total epochs trained: {n_epochs}")
+        logger.info(f"  Output checkpoint: {output_checkpoint}")
+        logger.info(f"  Log file: {log_file}")
+        
+        if session_idx < num_sessions:
+            next_session = sessions[session_idx]
+            logger.info(f"  Next session ({next_session['name']}) will load this checkpoint ✓")
+        
+        logger.info("=" * 80 + "\n")
+    
+    # ========================================================================
+    # COMPLETION
+    # ========================================================================
+    
+    logger.info("=" * 80)
+    logger.info("✓ SEQUENTIAL TRAINING COMPLETED SUCCESSFULLY")
+    logger.info("=" * 80)
+    logger.info(f"Trained on {num_sessions} datasets sequentially")
+    logger.info(f"Initialization: Fresh model once before Session 1")
+    logger.info(f"Sessions 2-4: Each loaded previous session's best model")
+    logger.info(f"Final best model: {sessions[-1]['output_checkpoint']}")
+    logger.info(f"All logs saved to: scARKIDS/logs/")
+    logger.info("=" * 80)
+
 
 # ============================================================================
 # Utility Functions
@@ -776,14 +1029,15 @@ def main():
         description="scARKIDS: Single-cell RNA-seq Analysis using VAE-DDPM",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
+
     parser.add_argument(
         '--mode',
         type=str,
         required=True,
-        choices=['train', 'inference'],
-        help='Execution mode: train or inference'
+        choices=['train', 'inference', 'sequential'],
+        help='Execution mode: train (single), inference, or sequential (multi-dataset)'
     )
+
     
     parser.add_argument(
         '--config',
@@ -899,6 +1153,13 @@ def main():
     try:
         if args.mode == 'train':
             run_training(
+                config_manager=config_manager,
+                managers=managers,
+                data_loaders=data_loaders
+            )
+        
+        elif args.mode == 'sequential':
+            run_sequential_training(
                 config_manager=config_manager,
                 managers=managers,
                 data_loaders=data_loaders

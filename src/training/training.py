@@ -640,6 +640,8 @@ class TrainingManager:
         
         # Parse configuration
         self.config = self._parse_config(config_dict)
+        self.session_name = "training"  # default; can be overridden by main.py
+
         
         # Get atomic modules
         likelihood_module = likelihood_manager.get_module()
@@ -835,6 +837,11 @@ class TrainingManager:
             logger.info(f"Best loss achieved: {self.training_core.best_loss:.6f}")
             logger.info("=" * 80)
 
+                    
+            # Export metrics for hyperparameter tuning analysis
+            self._export_metrics_to_json()
+    
+
         except KeyboardInterrupt:
             logger.info("Training interrupted by user")
             # Save checkpoint on interruption
@@ -870,6 +877,67 @@ class TrainingManager:
         """
         self.training_core.load_checkpoint(filepath)
         logger.info(f"Model loaded from {filepath}")
+
+    def _export_metrics_to_json(self):
+        """
+        Export training metrics to JSON for hyperparameter tuning analysis.
+        
+        Creates:
+        - {session}_metrics.json: Detailed per-epoch metrics
+        - {session}_summary.json: High-level training summary
+        """
+        import json
+        from pathlib import Path
+        
+        # Determine session name from config or use generic
+        session_name = getattr(self, 'session_name', 'training')
+
+        log_dir = Path(self.config.checkpoint_dir).parent / 'logs'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 1. Export detailed metrics
+        metrics_file = log_dir / f"{session_name}_metrics.json"
+        metrics_data = {
+            'session': session_name,
+            'config': {
+                'supervised': self.config.supervised,
+                'n_epochs': self.config.n_epochs,
+                'batch_size': self.config.batch_size,
+                'learning_rate': self.config.learning_rate,
+                'weight_decay': self.config.weight_decay,
+                'lr_scheduler': self.config.lr_scheduler,
+            },
+            'training_metrics': self.training_core.train_metrics,
+            'best_loss': float(self.training_core.best_loss),
+        }
+        
+        with open(metrics_file, 'w') as f:
+            json.dump(metrics_data, f, indent=2)
+        
+        logger.info(f"Exported metrics to: {metrics_file}")
+
+        total_params = 0
+        for group in self.training_core.optimizer.param_groups:
+            for p in group['params']:
+                if p.requires_grad:
+                    total_params += p.numel()
+        
+        # 2. Export summary
+        summary_file = log_dir / f"{session_name}_summary.json"
+        summary_data = {
+            'session': session_name,
+            'supervised': self.config.supervised,
+            'total_epochs_trained': self.config.n_epochs,
+            'best_loss': float(self.training_core.best_loss),
+            'final_learning_rate': self.training_core.optimizer.param_groups['lr'],
+            'total_trainable_params': total_params,
+        }
+        
+        with open(summary_file, 'w') as f:
+            json.dump(summary_data, f, indent=2)
+        
+        logger.info(f"Exported summary to: {summary_file}")
+
 
 # ============================================================================
 # Config YAML Schema Documentation

@@ -476,6 +476,37 @@ class ConfigManager:
         mode = "Supervised" if self.is_supervised() else "Unsupervised"
         return f"ConfigManager(mode={mode}, modules={list(MODULE_SCHEMAS.keys())})"
 
+    def get_training_sessions(self) -> List[Dict]:
+        """
+        Get training sessions configuration for sequential training.
+        
+        Returns:
+            List of session configurations, each containing:
+            - name: Session identifier
+            - data_path: Path to training data
+            - supervised: Supervision mode
+            - n_epochs: Epochs for this session
+            - resume_from: Checkpoint to resume from (or None for first session)
+            - output_checkpoint: Where to save best model from this session
+        """
+        training_config = self.get_config('training')
+        sessions = training_config.get('sessions', None)
+        
+        if sessions is None:
+            logger.warning("No 'sessions' config found. Falling back to single training run.")
+            return None
+        
+        logger.info(f"Loaded {len(sessions)} training sessions")
+        for i, session in enumerate(sessions, 1):
+            logger.info(f"  Session {i}: {session['name']}")
+            logger.info(f"    Data: {session['data_path']}")
+            logger.info(f"    Supervised: {session['supervised']}")
+            logger.info(f"    Epochs: {session['n_epochs']}")
+            logger.info(f"    Resume from: {session.get('resume_from', 'None (init fresh)')}")
+        
+        return sessions
+    
+
 
 # ============================================================================
 # Example Usage

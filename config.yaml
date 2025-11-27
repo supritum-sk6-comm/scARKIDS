@@ -201,6 +201,41 @@ training:
   # Random seed (for reproducibility)
   seed: 42
 
+
+
+  sessions:
+    # Session 1: First unsupervised dataset (uses initialized model)
+    - name: "unsupervised_dataset_1"
+      data_path: "data/unsupervised_1.h5ad"
+      supervised: false
+      n_epochs: 100
+      resume_from: null  # Use initialized model
+      output_checkpoint: "checkpoints/session_1_best.pt"
+    
+    # Session 2: Second unsupervised dataset (loads Session 1 best)
+    - name: "unsupervised_dataset_2"
+      data_path: "data/unsupervised_2.h5ad"
+      supervised: false
+      n_epochs: 100
+      resume_from: "checkpoints/session_1_best.pt"  # Load Session 1 best
+      output_checkpoint: "checkpoints/session_2_best.pt"
+    
+    # Session 3: First supervised dataset (loads Session 2 best, mode switch)
+    - name: "supervised_dataset_3"
+      data_path: "data/supervised_3.h5ad"
+      supervised: true
+      n_epochs: 120  # Extra epochs for mode adaptation
+      resume_from: "checkpoints/session_2_best.pt"  # Load Session 2 best
+      output_checkpoint: "checkpoints/session_3_best.pt"
+    
+    # Session 4: Second supervised dataset (loads Session 3 best, final refinement)
+    - name: "supervised_dataset_4"
+      data_path: "data/supervised_4.h5ad"
+      supervised: true
+      n_epochs: 100
+      resume_from: "checkpoints/session_3_best.pt"  # Load Session 3 best
+      output_checkpoint: "checkpoints/session_4_best.pt"
+
 # ============================================================================
 # Inference Configuration
 # ============================================================================
