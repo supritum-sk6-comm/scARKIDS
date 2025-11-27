@@ -870,13 +870,39 @@ class TrainingManager:
     
     def load_model(self, filepath: str):
         """
-        Load trained model parameters.
-        
+        Load trained model parameters and enforce current hyperparameters.
+    
         Args:
             filepath: Path to model checkpoint
         """
+        # 1) Load full checkpoint: weights, optimizer, scheduler, scaler
         self.training_core.load_checkpoint(filepath)
         logger.info(f"Model loaded from {filepath}")
+    
+        # 2) Override optimizer hyperparameters from current config
+        #    This ensures that changes to learning_rate and weight_decay
+        #    in config.yaml take effect even after warm-starting.
+        for group in self.training_core.optimizer.param_groups:
+            group["lr"] = self.config.learning_rate
+            group["weight_decay"] = self.config.weight_decay
+        logger.info(
+            f"Overrode optimizer hyperparameters from config: "
+            f"lr={self.config.learning_rate:.3e}, "
+            f"weight_decay={self.config.weight_decay:.3e}"
+        )
+    
+        # 3) Recreate scheduler according to current config
+        #    This lets you change lr_scheduler type or its behavior
+        #    between sessions. If you want to keep the old schedule, 
+        #    comment this block out.
+        self.training_core.scheduler = self.training_core._setup_scheduler()
+        if self.training_core.scheduler is not None:
+            logger.info(
+                f"Reinitialized LR scheduler: {self.config.lr_scheduler}"
+            )
+        else:
+            logger.info("No LR scheduler configured (lr_scheduler=None)")
+    
 
     def _export_metrics_to_json(self):
         """
