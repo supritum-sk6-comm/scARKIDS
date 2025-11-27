@@ -496,7 +496,10 @@ class InferenceManager:
         
         # Get atomic modules
         self.encoder_module = encoder_manager.get_module()
-        self.classifier_module = classifier_manager.get_module()
+        if classifier_manager is not None:
+            self.classifier_module = classifier_manager.get_module()
+        else:
+            self.classifier_module = None
         self.ddpm_forward_module = ddpm_forward_manager.get_module()
         self.ddpm_backward_module = ddpm_backward_manager.get_module()
         self.likelihood_module = likelihood_manager.get_module()

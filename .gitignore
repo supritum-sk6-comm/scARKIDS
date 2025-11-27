@@ -55,3 +55,13 @@ logs/
 # Data files
 data/
 *.h5ad
+
+
+
+#model checkpoints
+checkpoints/
+
+
+
+#results
+results/

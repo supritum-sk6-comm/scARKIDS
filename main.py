@@ -83,7 +83,6 @@ class scRNASeqDataset(Dataset):
     - celltype_onehot: Cell type one-hot encoding (n_cell_types,)
     - library_size: Library size log(sum(x)) (scalar)
     """
-    
     def __init__(
         self,
         adata: ad.AnnData,
@@ -94,8 +93,8 @@ class scRNASeqDataset(Dataset):
         supervised: bool = False
     ):
         """
-        Initialize dataset from AnnData object.
-        
+        Initialize dataset from AnnData object with comprehensive data sanitization.
+
         Args:
             adata: AnnData object containing scRNA-seq data
             cell_type_key: Key in adata.obs for cell type labels
@@ -108,7 +107,7 @@ class scRNASeqDataset(Dataset):
         self.cell_type_key = cell_type_key
         self.batch_key = batch_key
         self.supervised = supervised
-        
+
         # Extract expression matrix (dense format)
         if hasattr(adata.X, 'toarray'):
             # Sparse matrix
@@ -116,16 +115,28 @@ class scRNASeqDataset(Dataset):
         else:
             # Dense matrix
             self.expression = adata.X.astype(np.float32)
-        
+
+        # Sanitize expression matrix: remove NaN/Inf, clip negative values
+        logger.info("Sanitizing expression matrix...")
+        invalid_mask = ~np.isfinite(self.expression)
+        if invalid_mask.any():
+            n_invalid = invalid_mask.sum()
+            logger.warning(f"Found {n_invalid} NaN/Inf values in expression matrix. Setting to 0.")
+            self.expression[invalid_mask] = 0.0
+
+        # Clip negative values (should not exist in counts, but be safe)
+        self.expression = np.clip(self.expression, a_min=0.0, a_max=None)
+        logger.info("✓ Expression matrix sanitized")
+
         # Extract batch labels
         if batch_key not in adata.obs.columns:
             raise ValueError(f"Batch key '{batch_key}' not found in adata.obs")
-        
+
         batch_labels = adata.obs[batch_key].astype('category')
         self.batch_categories = batch_labels.cat.categories
         self.batch_indices = batch_labels.cat.codes.values.astype(np.int64)
         self.n_batches = n_batches or len(self.batch_categories)
-        
+
         # Extract cell type labels (if available)
         self.has_celltype = cell_type_key in adata.obs.columns
         if self.has_celltype:
@@ -142,16 +153,101 @@ class scRNASeqDataset(Dataset):
             self.celltype_indices = np.zeros(len(adata), dtype=np.int64)
             self.n_cell_types = n_cell_types or 1
             self.celltype_categories = [f"Type{i}" for i in range(self.n_cell_types)]
-        
-        # Compute library sizes (sum of counts per cell)
-        self.library_sizes = np.log1p(self.expression.sum(axis=1)).astype(np.float32)
-        
+
+        # Compute library sizes (sum of counts per cell) with comprehensive sanitization
+        logger.info("Computing library sizes...")
+        raw_library_sizes = self.expression.sum(axis=1).astype(np.float32)
+
+        # Clip negative values (should not occur after clipping expression, but be safe)
+        raw_library_sizes = np.clip(raw_library_sizes, a_min=0.0, a_max=None)
+
+        # Apply log1p transformation
+        self.library_sizes = np.log1p(raw_library_sizes)
+
+        # Final sanitization: replace any NaN/Inf with 0.0
+        invalid_lib_mask = ~np.isfinite(self.library_sizes)
+        if invalid_lib_mask.any():
+            n_invalid_lib = invalid_lib_mask.sum()
+            logger.warning(f"Found {n_invalid_lib} NaN/Inf values in library sizes. Setting to 0.0.")
+            self.library_sizes[invalid_lib_mask] = 0.0
+
+        logger.info("✓ Library sizes computed and sanitized")
+
         logger.info(f"Dataset initialized:")
         logger.info(f"  n_obs: {len(self)}")
         logger.info(f"  n_genes: {self.expression.shape[1]}")
         logger.info(f"  n_batches: {self.n_batches}")
         logger.info(f"  n_cell_types: {self.n_cell_types}")
         logger.info(f"  has_celltype: {self.has_celltype}")
+
+    # def __init__(
+    #     self,
+    #     adata: ad.AnnData,
+    #     cell_type_key: str = "celltype",
+    #     batch_key: str = "batch",
+    #     n_cell_types: int = None,
+    #     n_batches: int = None,
+    #     supervised: bool = False
+    # ):
+    #     """
+    #     Initialize dataset from AnnData object.
+        
+    #     Args:
+    #         adata: AnnData object containing scRNA-seq data
+    #         cell_type_key: Key in adata.obs for cell type labels
+    #         batch_key: Key in adata.obs for batch labels
+    #         n_cell_types: Number of cell types (inferred if None)
+    #         n_batches: Number of batches (inferred if None)
+    #         supervised: If True, cell types are available; else may be missing
+    #     """
+    #     self.adata = adata
+    #     self.cell_type_key = cell_type_key
+    #     self.batch_key = batch_key
+    #     self.supervised = supervised
+        
+    #     # Extract expression matrix (dense format)
+    #     if hasattr(adata.X, 'toarray'):
+    #         # Sparse matrix
+    #         self.expression = adata.X.toarray().astype(np.float32)
+    #     else:
+    #         # Dense matrix
+    #         self.expression = adata.X.astype(np.float32)
+        
+    #     # Extract batch labels
+    #     if batch_key not in adata.obs.columns:
+    #         raise ValueError(f"Batch key '{batch_key}' not found in adata.obs")
+        
+    #     batch_labels = adata.obs[batch_key].astype('category')
+    #     self.batch_categories = batch_labels.cat.categories
+    #     self.batch_indices = batch_labels.cat.codes.values.astype(np.int64)
+    #     self.n_batches = n_batches or len(self.batch_categories)
+        
+    #     # Extract cell type labels (if available)
+    #     self.has_celltype = cell_type_key in adata.obs.columns
+    #     if self.has_celltype:
+    #         celltype_labels = adata.obs[cell_type_key].astype('category')
+    #         self.celltype_categories = celltype_labels.cat.categories
+    #         self.celltype_indices = celltype_labels.cat.codes.values.astype(np.int64)
+    #         self.n_cell_types = n_cell_types or len(self.celltype_categories)
+    #     else:
+    #         if supervised:
+    #             logger.warning(
+    #                 f"Supervised mode enabled but cell type key '{cell_type_key}' "
+    #                 "not found in adata.obs. Using dummy labels."
+    #             )
+    #         self.celltype_indices = np.zeros(len(adata), dtype=np.int64)
+    #         self.n_cell_types = n_cell_types or 1
+    #         self.celltype_categories = [f"Type{i}" for i in range(self.n_cell_types)]
+        
+    #     # Compute library sizes (sum of counts per cell)
+    #     self.library_sizes = np.log1p(self.expression.sum(axis=1)).astype(np.float32)
+        
+    #     logger.info(f"Dataset initialized:")
+    #     logger.info(f"  n_obs: {len(self)}")
+    #     logger.info(f"  n_genes: {self.expression.shape[1]}")
+    #     logger.info(f"  n_batches: {self.n_batches}")
+    #     logger.info(f"  n_cell_types: {self.n_cell_types}")
+    #     logger.info(f"  has_celltype: {self.has_celltype}")
     
     def __len__(self):
         return len(self.expression)
@@ -619,7 +715,7 @@ def run_inference(
         np.save(predictions_path, all_results['cell_type_predictions'])
         logger.info(f"✓ Saved cell type predictions to {predictions_path}")
         
-        if all_results['cell_type_probs']:
+        if all_results['cell_type_probs'].size > 0:
             probs_path = Path(output_dir) / 'cell_type_probabilities.npy'
             np.save(probs_path, all_results['cell_type_probs'])
             logger.info(f"✓ Saved cell type probabilities to {probs_path}")

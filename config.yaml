@@ -27,7 +27,7 @@ global:
   n_cell_types: 13                  # Number of cell types C
   
   # Model mode
-  supervised: false                # true: c* known, false: c inferred
+  supervised: true                # true: c* known, false: c inferred
   
   # Numerical stability
   eps: 1.0e-8                      # Small constant for numerical stability
@@ -41,16 +41,16 @@ global:
 # ============================================================================
 data:
   # Dataset paths
-  train_data_path: "./data/lungs_train.h5ad"
-  val_data_path: "./data/lungs_val.h5ad"
-  test_data_path: "./data/lungs_test.h5ad"
+  train_data_path: "./data/lungs_train_supervised.h5ad"
+  val_data_path: "./data/lungs_val_supervised.h5ad"
+  test_data_path: "./data/lungs_test_supervised.h5ad"
   
   # Data preprocessing
   log_transform: true              # Apply log1p transformation
   normalize: true                  # Normalize by library size
   
   # Cell type and batch information
-  cell_type_key: "none"       # Key in adata.obs for cell type labels
+  cell_type_key: "celltype"       # Key in adata.obs for cell type labels
   batch_key: "orig.ident"               # Key in adata.obs for batch labels
   
   # Optional: Empirical priors (computed from data if not specified)
@@ -130,7 +130,7 @@ ddpm_forward:
   # Inherits: latent_dim, n_diffusion_steps from global
   
   # Variance schedule
-  beta_schedule: "linear"          # Options: 'linear', 'cosine', 'quadratic'
+  beta_schedule: "cosine"          # Options: 'linear', 'cosine', 'quadratic'
   beta_min: 1.0e-4                 # Minimum β_t value
   beta_max: 2.0e-2                 # Maximum β_t value
 
@@ -177,7 +177,7 @@ training:
   # Inherits: supervised from global
   
   # Training loop
-  n_epochs: 100                    # Number of training epochs
+  n_epochs: 40                    # Number of training epochs
   batch_size: 256                  # Mini-batch size
   
   # Optimization
@@ -186,7 +186,7 @@ training:
   grad_clip_norm: 1.0              # Maximum gradient norm for clipping
   
   # Learning rate scheduling
-  lr_scheduler: "cosine"           # Options: 'cosine', 'step', 'plateau', null
+  lr_scheduler: "step"           # Options: 'cosine', 'step', 'plateau', null
   lr_warmup_epochs: 5              # Number of warmup epochs
   
   # Logging and checkpointing
